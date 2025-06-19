@@ -55,7 +55,9 @@ const
     NEWLINE = #10;
     EOF = #0;
 
-function TokenizeUnit(const Buffer: TBuffer): PToken;
+function  TokenizeUnit(const Buffer: TBuffer): PToken;
+procedure TokenListDispose(var TokenList: PToken);
+
 function TokenToString(const Token: TToken): string;
 
 implementation
@@ -380,6 +382,23 @@ begin
     ReverseTokenList(t.Tokens);
 
     TokenizeUnit := t.Tokens;
+end;
+
+procedure TokenListDispose(var TokenList: PToken);
+var
+    cur, next: PToken;
+begin
+    cur := TokenList;
+
+    while cur <> nil do
+    begin
+        next := cur^.Next;
+        Dispose(cur);
+
+        cur := next;
+    end;
+
+    TokenList := nil;
 end;
 
 end.

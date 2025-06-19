@@ -34,5 +34,6 @@ begin
         t := t^.Next;
     until t = nil;
 
+    TokenListDispose(toks);
     BufferDispose(result);
 end.
