@@ -8,7 +8,7 @@ uses
 var
     result: TBuffer;
     s: string;
-    toks, t: PTokenList;
+    toks, t: PToken;
 
 begin
     if ParamCount() < 1 then
@@ -29,8 +29,7 @@ begin
     t := toks;
 
     repeat
-        Str(t^.Kind, s);
-        WriteLn(s);
+        WriteLn(TokenToString(t^));
 
         t := t^.Next;
     until t = nil;
