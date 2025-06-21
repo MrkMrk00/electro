@@ -79,18 +79,7 @@ begin
     if T.ErrIdx >= High(T.Errors) then
     begin
         WriteLn(StdErr, 'too many encountered while parsing ', T.UnitName);
-        WriteLn(StdErr, 'exiting...');
-        WriteLn(StdErr);
-
-        for i := Low(T.Errors) to High(T.Errors) do
-        begin
-            WriteLn(StdErr, T.Errors[i]);
-        end;
-
-        // last error
-        WriteLn(StdErr, ErrorMessage);
-
-        Halt(1);
+        Exit;
     end;
 
     T.Errors[T.ErrIdx] := ErrorMessage;
@@ -457,10 +446,10 @@ begin
             else
             begin
                 AppendInvalid(t, ch);
-                WriteLn(StdErr, 'unmatched "', ch, '"');
+                AppendError(t, 'invalid token encountered "' + ch + '"');
             end;
         end;
-    until ch = EOF;
+    until (ch = EOF) or (t.ErrIdx >= High(t.Errors));
 
     if t.ErrIdx > 0 then
     begin
