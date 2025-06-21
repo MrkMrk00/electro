@@ -36,8 +36,6 @@ type
         tokNumber,
         tokCharcode,    // e.g. #10 -> NEWLINE literal
 
-        tokNewline,
-
         tokInvalid
     );
 
@@ -394,6 +392,7 @@ var
     ch: char;
     i: Integer;
 begin
+    t.Idx := 0;
     t.UnitName := UnitName;
     t.Buffer := Buffer;
     t.Line := 0;
@@ -445,8 +444,6 @@ begin
                     AppendSymbol(t, tokLt)
             end;
             '=': AppendSymbol(t, tokEq);
-            NEWLINE: AppendSymbol(t, tokNewline);
-
             '#': EatCharcode(t);
         else
             if IsNumeric(ch) then
@@ -455,7 +452,7 @@ begin
                 EatIdentifier(t)
             else if ch = '''' then
                 EatString(t)
-            else if (ch = ' ') or (ch = TAB) or (ch = EOF) then
+            else if (ch = ' ') or (ch = TAB) or (ch = EOF) or (ch = NEWLINE) then
                 continue
             else
             begin

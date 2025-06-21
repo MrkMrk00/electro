@@ -6,8 +6,7 @@ uses
     Tokenizer;
 
 var
-    result: TBuffer;
-    s: string;
+    unitSource: TBuffer;
     toks, t: PToken;
 
 begin
@@ -17,9 +16,9 @@ begin
         Halt(1);
     end;
 
-    result := ReadEntireFile(ParamStr(1));
+    unitSource := ReadEntireFile(ParamStr(1));
+    toks := TokenizeUnit(ParamStr(1), unitSource);
 
-    toks := TokenizeUnit(ParamStr(1), result);
     if toks = nil then
     begin
         WriteLn(StdErr, 'failed to tokenize file ', ParamStr(1));
@@ -34,6 +33,6 @@ begin
         t := t^.Next;
     until t = nil;
 
+    BufferDispose(unitSource);
     TokenListDispose(toks);
-    BufferDispose(result);
 end.
