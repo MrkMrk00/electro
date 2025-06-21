@@ -19,7 +19,7 @@ begin
 
     result := ReadEntireFile(ParamStr(1));
 
-    toks := TokenizeUnit(result);
+    toks := TokenizeUnit(ParamStr(1), result);
     if toks = nil then
     begin
         WriteLn(StdErr, 'failed to tokenize file ', ParamStr(1));

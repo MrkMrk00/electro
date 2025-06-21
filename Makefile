@@ -1,6 +1,6 @@
 EXE := tc
 BUILD_DIR := build
-CFLAGS := -Mtp
+CFLAGS := -Mtp -O2
 
 all: $(EXE)
 

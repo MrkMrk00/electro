@@ -6,12 +6,12 @@ uses BufferUtils;
 
 type
     TTokenKind = (
-        tokLParen,
-        tokRParen,
-        tokLBrace,
-        tokRBrace,
-        tokPlus,
-        tokMinus,
+        tokLParen,      // (
+        tokRParen,      // )
+        tokLBrace,      // [
+        tokRBrace,      // ]
+        tokPlus,        // +
+        tokMinus,       // -
         tokStar,        // *
         tokSlash,       // /
         tokComma,       // ,
@@ -34,7 +34,7 @@ type
         tokIdentifier,
         tokString,
         tokNumber,
-        tokCharcode,
+        tokCharcode,    // e.g. #10 -> NEWLINE literal
 
         tokNewline,
 
@@ -55,7 +55,7 @@ const
     NEWLINE = #10;
     EOF = #0;
 
-function  TokenizeUnit(const Buffer: TBuffer): PToken;
+function  TokenizeUnit(UnitName: string; const Buffer: TBuffer): PToken;
 procedure TokenListDispose(var TokenList: PToken);
 
 function TokenToString(const Token: TToken): string;
@@ -64,11 +64,40 @@ implementation
 
 type
     TTokenizerState = record
+        UnitName: string;
         Idx: UInt32;
         Buffer: TBuffer;
         Line, Col: UInt32;
         Tokens: PToken;
+        Errors: array [0..15] of string;
+        ErrIdx: Integer;
     end;
+
+procedure AppendError(var T: TTokenizerState; ErrorMessage: string);
+var
+    i: Integer;
+begin
+    // is full -> short circuit
+    if T.ErrIdx >= High(T.Errors) then
+    begin
+        WriteLn(StdErr, 'too many encountered while parsing ', T.UnitName);
+        WriteLn(StdErr, 'exiting...');
+        WriteLn(StdErr);
+
+        for i := Low(T.Errors) to High(T.Errors) do
+        begin
+            WriteLn(StdErr, T.Errors[i]);
+        end;
+
+        // last error
+        WriteLn(StdErr, ErrorMessage);
+
+        Halt(1);
+    end;
+
+    T.Errors[T.ErrIdx] := ErrorMessage;
+    Inc(T.ErrIdx);
+end;
 
 function TokenToString(const Token: TToken): string;
 var
@@ -81,7 +110,8 @@ begin
     ret := line + ':' + col + ': ';
 
     case Token.Kind of
-        tokNumber, tokIdentifier, tokString: 
+        tokNumber, tokIdentifier, tokString,
+        tokCharcode, tokInvalid:
             ret := ret + kind + '(' + Token.Literal + ')';
     else
         ret := ret + kind;
@@ -108,10 +138,9 @@ begin
     AppendToken(T, token);
 end;
 
-procedure AppendInvalid(var T: TTokenizerState; Lit: char);
+procedure AppendInvalid(var T: TTokenizerState; Lit: string);
 var
     token: PToken;
-    asStr: string;
 begin
     New(token);
 
@@ -233,7 +262,6 @@ begin
 
     while IsNumeric(lookahead) or (lookahead = '.') do
     begin
-        // TODO: handle EOF
         Advance(T);
         lookahead := Peek(T);
     end;
@@ -273,7 +301,6 @@ begin
 
     while IsIdentifierStart(lookahead) or IsNumeric(lookahead) do
     begin
-        // TODO: handle EOF
         Advance(T);
         lookahead := Peek(T);
     end;
@@ -290,6 +317,15 @@ begin
     AppendToken(T, token);
 end;
 
+function IntToStr(I: Integer): string;
+var
+    ret: string;
+begin
+    Str(I, ret);
+
+    IntToStr := ret;
+end;
+
 procedure EatString(var T: TTokenizerState);
 var
     startPos, endPos: UInt32;
@@ -302,7 +338,14 @@ begin
 
     while (lookahead <> '''') or ((lookahead = '''') and (PeekN(T, 2) = '''')) do
     begin
-        // TODO: handle EOF
+        // unterminated string literal
+        if (lookahead = EOF) or (lookahead = NEWLINE) then
+        begin
+            AppendInvalid(T, SourceSubstr(T, startPos, T.Idx - 1));
+            AppendError(T, 'unterminated string literal at ' + IntToStr(T.Line) + ':' + IntToStr(T.Col) + ':');
+            Exit;
+        end;
+
         Advance(T);
         lookahead := Peek(T);
     end;
@@ -322,15 +365,41 @@ begin
     AppendToken(T, token);
 end;
 
-function TokenizeUnit(const Buffer: TBuffer): PToken;
+procedure EatCharcode(var T: TTokenizerState);
+var
+    startPos, endPos: UInt32;
+    literal: string;
+    token: ^TToken;
+begin
+    startPos := T.Idx - 1;
+
+    while IsNumeric(Peek(T)) do
+        Advance(T);
+
+    endPos := T.Idx - 1;
+    literal := SourceSubstr(T, startPos, endPos);
+
+    New(token);
+    token^.Line := T.Line;
+    token^.Col := T.Col - Length(literal);
+    token^.Kind := tokCharcode;
+    token^.Literal := literal;
+
+    AppendToken(T, token);
+end;
+
+function TokenizeUnit(UnitName: string; const Buffer: TBuffer): PToken;
 var
     t: TTokenizerState;
     ch: char;
+    i: Integer;
 begin
+    t.UnitName := UnitName;
     t.Buffer := Buffer;
     t.Line := 0;
     t.Col := 0;
     t.Tokens := nil;
+    t.ErrIdx := 0;
 
     repeat
         ch := Advance(t);
@@ -343,17 +412,15 @@ begin
             '+': AppendSymbol(t, tokPlus);
             '-': AppendSymbol(t, tokMinus);
             '*': AppendSymbol(t, tokStar);
+            '/': AppendSymbol(t, tokSlash);
             ',': AppendSymbol(t, tokComma);
-            '^': AppendSymbol(t, tokCircumflex);
-            ';': AppendSymbol(t, tokSemi);
-
             '.': begin
                 if Match(t, '.') then
                     AppendSymbol(t, tokRangeCtor)
                 else
                     AppendSymbol(t, tokDot);
             end;
-
+            '^': AppendSymbol(t, tokCircumflex);
             ':': begin
                 if Match(t, '=') then
                     AppendSymbol(t, tokAssign)
@@ -361,23 +428,54 @@ begin
                     AppendSymbol(t, tokColon);
             end;
 
+            ';': AppendSymbol(t, tokSemi);
+
+            '>': begin
+                if Match(t, '=') then
+                    AppendSymbol(t, tokGte)
+                else
+                    AppendSymbol(t, tokGt);
+            end;
+            '<': begin
+                if Match(t, '=') then
+                    AppendSymbol(t, tokLte)
+                else if Match(t, '>') then
+                    AppendSymbol(t, tokNeq)
+                else
+                    AppendSymbol(t, tokLt)
+            end;
+            '=': AppendSymbol(t, tokEq);
             NEWLINE: AppendSymbol(t, tokNewline);
+
+            '#': EatCharcode(t);
         else
             if IsNumeric(ch) then
-                EatNumber(T)
+                EatNumber(t)
             else if IsIdentifierStart(ch) then
-                EatIdentifier(T)
+                EatIdentifier(t)
             else if ch = '''' then
-                EatString(T)
+                EatString(t)
             else if (ch = ' ') or (ch = TAB) or (ch = EOF) then
                 continue
             else
             begin
-                AppendInvalid(T, ch);
+                AppendInvalid(t, ch);
                 WriteLn(StdErr, 'unmatched "', ch, '"');
             end;
         end;
     until ch = EOF;
+
+    if t.ErrIdx > 0 then
+    begin
+        TokenListDispose(t.Tokens);
+
+        for i := Low(t.Errors) to t.ErrIdx - 1 do
+        begin
+            WriteLn(StdErr, T.Errors[i]);
+        end;
+
+        Exit(nil);
+    end;
 
     ReverseTokenList(t.Tokens);
 
