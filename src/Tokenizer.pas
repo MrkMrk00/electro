@@ -42,10 +42,13 @@ type
     PToken = ^TToken;
 
     TToken = record
+        Kind: TTokenKind;
         Line, Col: Integer;
         Next: PToken;
-        case Kind: TTokenKind of
-            tokIdentifier, tokString, tokNumber: (Literal: string);
+
+        case TTokenKind of
+            tokIdentifier, tokString, tokNumber,
+            tokCharcode, tokInvalid: (Literal: string);
     end;
 
 const
@@ -93,7 +96,8 @@ begin
     Str(Token.Line, line);
     Str(Token.Col, col);
 
-    ret := line + ':' + col + ': ';
+    // ret := line + ':' + col + ': ';
+    ret := '';
 
     case Token.Kind of
         tokNumber, tokIdentifier, tokString,

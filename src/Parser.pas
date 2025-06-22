@@ -10,7 +10,6 @@ type
     PExpression = ^TExpression;
     TExpression = record
         Kind: TExpressionKind;
-        Next: PExpression;
 
         // This is kind of hell. If this was slightly better, I believe this language
         // would still be used today :/
@@ -24,6 +23,7 @@ type
     end;
 
 procedure ParseTokens(UnitName: string; TokenList: PToken);
+procedure PrintExpression(Expression: PExpression);
 
 implementation
 
@@ -46,12 +46,14 @@ implementation
                 // part of the type system of the language not keywords
 }
 
+
 type
     TParserState = record
         TokenList: PToken;
         Expressions: PExpression;
     end;
 
+function EatExpression(var T: TParserState): PExpression; forward;
 
 function NewBinaryExpression(Left: PExpression; Operator: TToken; Right: PExpression): PExpression;
 var
@@ -66,25 +68,24 @@ begin
     NewBinaryExpression := ret;
 end;
 
-// can return nil -> end of list
-// function Peek(var T: TParserState): PToken;
-// begin
-//     if T.TokenList = nil then
-//         Exit(nil);
-//
-//     Peek := T.TokenList^.Next;
-// end;
-
 function Match(var T: TParserState; Kind: TTokenKind): Boolean;
-var
-    next: PToken;
 begin
-    next := T.TokenList^.Next;
-
-    if next = nil then
+    if t.TokenList = nil then
         Exit(false);
 
-    Match := next^.Kind = Kind;
+    Match := t.TokenList^.Kind = Kind;
+end;
+
+function MatchKW(var T: TParserState; Keyword: string): Boolean;
+var
+    token: PToken;
+begin
+    token := T.TokenList;
+
+    if (token = nil) or (token^.Kind <> tokIdentifier) then
+        Exit(false);
+
+    MatchKW := token^.Literal = Keyword;
 end;
 
 function Advance(var T: TParserState): PToken;
@@ -95,6 +96,117 @@ begin
     T.TokenList := cur^.Next;
 
     Advance := cur;
+end;
+
+function EatPrimary(var T: TParserState): PExpression;
+var
+    expr: PExpression;
+    literal: TToken;
+begin
+    case T.TokenList^.Kind of
+        tokIdentifier, tokString, tokNumber,
+        tokCharcode: begin
+            literal := Advance(T)^;
+            literal.Next := nil;
+
+            New(expr);
+            expr^.Kind := exprLiteral;
+            expr^.Literal := literal;
+
+            EatPrimary := expr;
+        end;
+
+        tokLParen: begin
+            // eat "("
+            Advance(T);
+
+            New(expr);
+            expr^.Kind := exprGrouping;
+            expr^.Inner := EatExpression(T);
+
+            // TODO: handle gracefully
+            if not Match(T, tokRParen) then
+            begin
+                WriteLn(StdErr,
+                    'unexpected token "',
+                    TokenToString(T.TokenList^),
+                    ' expected "tokRParen".'
+                );
+
+                Halt(1);
+            end;
+
+            // eat ")"
+            Advance(T);
+
+            EatPrimary := expr;
+        end;
+    else
+    begin
+        // TODO: handle gracefully
+        WriteLn(StdErr, 'unexpected token "', TokenToString(T.TokenList^), '"');
+        Halt(1);
+    end
+    end;
+end;
+
+function EatUnary(var T: TParserState): PExpression;
+var
+    expr: PExpression;
+    prefixOperator: TToken;
+begin
+    // Is unary with sign prefix
+    if Match(T, tokMinus) or Match(T, tokPlus) then
+    begin
+        prefixOperator := Advance(T)^;
+
+        New(expr);
+        expr^.Kind := exprUnary;
+        expr^.PrefixOperator := prefixOperator;
+        expr^.Expression := EatUnary(T);
+
+        EatUnary := expr;
+    end
+    else
+        EatUnary := EatPrimary(T);
+end;
+
+function EatFactor(var T: TParserState): PExpression;
+var
+    expr, right: PExpression;
+    operator: TToken;
+begin
+    expr := EatUnary(T);
+
+    while Match(T, tokStar) or MatchKW(T, 'mod') or MatchKW(T, 'div') do
+    begin
+        operator := Advance(T)^;
+        operator.Next := nil;
+        right := EatUnary(T);
+
+        expr := NewBinaryExpression(expr, operator, right);
+    end;
+
+    EatFactor := expr;
+end;
+
+function EatTerm(var T: TParserState): PExpression;
+var
+    expr, right: PExpression;
+    operator: TToken;
+begin
+    expr := EatFactor(T);
+
+    while Match(T, tokMinus) or Match(T, tokPlus) do
+    begin
+        operator := Advance(T)^;
+        operator.Next := nil;
+        right := EatFactor(T);
+
+        expr := NewBinaryExpression(expr, operator, right);
+    end;
+
+    EatTerm := expr;
 end;
 
 function EatComparison(var T: TParserState): PExpression;
@@ -144,7 +256,7 @@ end;
 procedure ParseTokens(UnitName: string; TokenList: PToken);
 var
     t: TParserState;
-    expressions: array of TExpression;
+    expr: PExpression;
 begin
     t.TokenList := TokenList;
     t.Expressions := nil;
@@ -157,8 +269,82 @@ begin
     end;
 
     repeat
+    begin
+        if t.TokenList^.Kind = tokSemi then
+        begin
+            t.TokenList := t.TokenList^.Next;
+            continue;
+        end;
 
+        expr := EatExpression(t);
+        PrintExpression(expr);
+    end
     until t.TokenList = nil;
+end;
+
+function IndentString(Str: string; Depth: Integer): string;
+var
+    ret: string;
+begin
+    ret := '';
+
+    for Depth := Depth downto 1 do
+    begin
+        ret := ret + '    ';
+    end;
+
+    IndentString := ret + Str;
+end;
+
+function PrintExpressionImpl(Expression: PExpression; Depth: Integer): string;
+var
+    i: Integer;
+begin
+    case Expression^.Kind of
+        exprLiteral: begin
+            PrintExpressionImpl := IndentString(
+                'Literal(' + TokenToString(Expression^.Literal) + ')',
+                Depth
+            );
+        end;
+        exprUnary:
+            PrintExpressionImpl := IndentString(
+                'Unary('
+                    + IndentString(TokenToString(Expression^.PrefixOperator), Depth)
+                    + NEWLINE
+                    + PrintExpressionImpl(Expression^.Expression, Depth + 1)
+                    + NEWLINE
+                    + ')',
+                Depth
+            );
+        exprBinary:
+            PrintExpressionImpl := IndentString(
+                'Binary('
+                    + NEWLINE
+                    + PrintExpressionImpl(Expression^.Left, Depth + 1)
+                    + NEWLINE
+                    + IndentString(TokenToString(Expression^.Operator), Depth + 1)
+                    + NEWLINE
+                    + PrintExpressionImpl(Expression^.Right, Depth + 1)
+                    + NEWLINE
+                    + IndentString(')', Depth),
+                Depth
+            );
+        exprGrouping:
+            PrintExpressionImpl := IndentString(
+                '('
+                    + NEWLINE
+                    + PrintExpressionImpl(Expression^.Inner, Depth + 1)
+                    + NEWLINE
+                    + ')',
+                Depth
+            );
+    end;
+end;
+
+procedure PrintExpression(Expression: PExpression);
+begin
+    WriteLn(PrintExpressionImpl(Expression, 0));
 end;
 
 end.

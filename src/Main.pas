@@ -29,12 +29,20 @@ begin
         Halt(1);
     end;
 
+
     t := toks;
     repeat
         WriteLn(TokenToString(t^));
 
         t := t^.Next;
     until t = nil;
+
+
+    WriteLn;
+    WriteLn('====================================');
+    WriteLn;
+
+    ParseTokens(fileName, toks);
 
     BufferDispose(unitSource);
     TokenListDispose(toks);
