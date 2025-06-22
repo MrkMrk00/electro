@@ -8,7 +8,7 @@ uses
 
 var
     unitSource: TBuffer;
-    toks, t: PToken;
+    toks: PToken;
     fileName: string;
 
 begin
@@ -28,19 +28,6 @@ begin
         WriteLn(StdErr, 'failed to tokenize file ', fileName);
         Halt(1);
     end;
-
-
-    t := toks;
-    repeat
-        WriteLn(TokenToString(t^));
-
-        t := t^.Next;
-    until t = nil;
-
-
-    WriteLn;
-    WriteLn('====================================');
-    WriteLn;
 
     ParseTokens(fileName, toks);
 

@@ -253,6 +253,24 @@ begin
     EatExpression := EatEquality(T);
 end;
 
+procedure ExpressionDispose(var Expr: PExpression);
+begin
+    if Expr = nil then
+        Exit;
+
+    case Expr^.Kind of
+        exprUnary: ExpressionDispose(Expr^.Expression);
+        exprBinary: begin
+            ExpressionDispose(Expr^.Left);
+            ExpressionDispose(Expr^.Right);
+        end;
+        exprGrouping: ExpressionDispose(Expr^.Inner);
+    end;
+
+    Dispose(Expr);
+    Expr := nil;
+end;
+
 procedure ParseTokens(UnitName: string; TokenList: PToken);
 var
     t: TParserState;
@@ -278,6 +296,8 @@ begin
 
         expr := EatExpression(t);
         PrintExpression(expr);
+
+        ExpressionDispose(expr);
     end
     until t.TokenList = nil;
 end;
@@ -297,8 +317,6 @@ begin
 end;
 
 function PrintExpressionImpl(Expression: PExpression; Depth: Integer): string;
-var
-    i: Integer;
 begin
     case Expression^.Kind of
         exprLiteral: begin

@@ -13,7 +13,6 @@ type
         tokPlus,        // +
         tokMinus,       // -
         tokStar,        // *
-        tokSlash,       // /
         tokComma,       // ,
         tokDot,         // .
         tokCircumflex,  // ^
@@ -74,8 +73,6 @@ type
     end;
 
 procedure AppendError(var T: TTokenizerState; ErrorMessage: string);
-var
-    i: Integer;
 begin
     // is full -> short circuit
     if T.ErrIdx >= High(T.Errors) then
@@ -378,6 +375,41 @@ begin
     AppendToken(T, token);
 end;
 
+procedure EatComment(var T: TTokenizerState);
+var
+    ch: char;
+begin
+    repeat
+        ch := Advance(T);
+    until (ch = NEWLINE) or (ch = EOF);
+end;
+
+procedure EatMultiLineComment(var T: TTokenizerState);
+var
+    curlyDepth: Integer;
+    ch: char;
+begin
+    curlyDepth := 1;
+
+    repeat
+    begin
+        ch := Advance(T);
+        case ch of
+            '{': curlyDepth := curlyDepth + 1;
+            '}': curlyDepth := curlyDepth - 1;
+            EOF: begin
+                AppendInvalid(t, '{');
+                AppendError(t, 
+                    'unterminated multiline comment encountered at '
+                        + IntToStr(t.Line) + ':'
+                        + IntToStr(t.Col) + ':'
+                );
+            end;
+        end;
+    end
+    until curlyDepth <= 0;
+end;
+
 function TokenizeUnit(UnitName: string; const Buffer: TBuffer): PToken;
 var
     t: TTokenizerState;
@@ -403,7 +435,6 @@ begin
             '+': AppendSymbol(t, tokPlus);
             '-': AppendSymbol(t, tokMinus);
             '*': AppendSymbol(t, tokStar);
-            '/': AppendSymbol(t, tokSlash);
             ',': AppendSymbol(t, tokComma);
             '.': begin
                 if Match(t, '.') then
@@ -437,6 +468,10 @@ begin
             end;
             '=': AppendSymbol(t, tokEq);
             '#': EatCharcode(t);
+
+            // TODO: implement preprocessor statements?
+            // only useful for Pascal compat though...
+            '{': EatMultiLineComment(t);
         else
             if IsNumeric(ch) then
                 EatNumber(t)
@@ -444,6 +479,8 @@ begin
                 EatIdentifier(t)
             else if ch = '''' then
                 EatString(t)
+            else if (ch = '/') and (Peek(t) = '/') then
+                EatComment(t)
             else if (ch = ' ') or (ch = TAB) or (ch = EOF) or (ch = NEWLINE) then
                 continue
             else
