@@ -55,8 +55,7 @@ const
 
 function  TokenizeUnit(UnitName: string; const Buffer: TBuffer): PToken;
 procedure TokenListDispose(var TokenList: PToken);
-
-function TokenToString(const Token: TToken): string;
+function  TokenToString(const Token: TToken): string;
 
 implementation
 

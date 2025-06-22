@@ -3,11 +3,13 @@ program Electro;
 uses
     FileUtils,
     BufferUtils,
-    Tokenizer;
+    Tokenizer,
+    Parser;
 
 var
     unitSource: TBuffer;
     toks, t: PToken;
+    fileName: string;
 
 begin
     if ParamCount() < 1 then
@@ -16,17 +18,18 @@ begin
         Halt(1);
     end;
 
-    unitSource := ReadEntireFile(ParamStr(1));
-    toks := TokenizeUnit(ParamStr(1), unitSource);
+    fileName := ParamStr(1);
+
+    unitSource := ReadEntireFile(fileName);
+    toks := TokenizeUnit(fileName, unitSource);
 
     if toks = nil then
     begin
-        WriteLn(StdErr, 'failed to tokenize file ', ParamStr(1));
+        WriteLn(StdErr, 'failed to tokenize file ', fileName);
         Halt(1);
     end;
 
     t := toks;
-
     repeat
         WriteLn(TokenToString(t^));
 
