@@ -10,6 +10,7 @@ type
     PExpression = ^TExpression;
     TExpression = record
         Kind: TExpressionKind;
+        Next: PExpression;
 
         // This is kind of hell. If this was slightly better, I believe this language
         // would still be used today :/
@@ -22,8 +23,9 @@ type
             exprGrouping: (Inner: PExpression);
     end;
 
-procedure ParseTokens(UnitName: string; TokenList: PToken);
+function  ParseTokens(UnitName: string; TokenList: PToken): PExpression;
 procedure PrintExpression(Expression: PExpression);
+procedure ExpressionDispose(var Expr: PExpression);
 
 implementation
 
@@ -45,7 +47,6 @@ implementation
                 // true, false and nil are enum constructors - (IDENTIFIER)
                 // part of the type system of the language not keywords
 }
-
 
 type
     TParserState = record
@@ -271,7 +272,7 @@ begin
     Expr := nil;
 end;
 
-procedure ParseTokens(UnitName: string; TokenList: PToken);
+function ParseTokens(UnitName: string; TokenList: PToken): PExpression;
 var
     t: TParserState;
     expr: PExpression;
@@ -295,11 +296,12 @@ begin
         end;
 
         expr := EatExpression(t);
-        PrintExpression(expr);
-
-        ExpressionDispose(expr);
+        expr^.Next := t.Expressions;
+        t.Expressions := expr;
     end
     until t.TokenList = nil;
+
+    ParseTokens := t.Expressions;
 end;
 
 function IndentString(Str: string; Depth: Integer): string;

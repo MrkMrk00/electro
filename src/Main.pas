@@ -4,12 +4,14 @@ uses
     FileUtils,
     BufferUtils,
     Tokenizer,
-    Parser;
+    Parser,
+    Interpreter;
 
 var
     unitSource: TBuffer;
     toks: PToken;
     fileName: string;
+    expression: PExpression;
 
 begin
     if ParamCount() < 1 then
@@ -29,7 +31,14 @@ begin
         Halt(1);
     end;
 
-    ParseTokens(fileName, toks);
+    expression := ParseTokens(fileName, toks);
+    while expression <> nil do
+    begin
+        PrintExpression(expression);
+        WriteLn('= ', Trunc(EvaluateExpression(expression^).FloatVal));
+
+        expression := expression^.Next;
+    end;
 
     BufferDispose(unitSource);
     TokenListDispose(toks);
