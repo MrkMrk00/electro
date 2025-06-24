@@ -58,11 +58,19 @@ begin
     expression := ParseTokens(fileName, toks);
     while expression <> nil do
     begin
+        WriteLn('================================================');
+        WriteLn;
         PrintExpression(expression);
         WriteLn('= ', Trunc(EvaluateExpression(expression^).NumVal));
+        WriteLn;
 
-        expression := expression^.Next;
+        next := expression^.Next;
+        ExpressionDispose(expression);
+
+        expression := next;
     end;
+
+    WriteLn('================================================');
 
     BufferDispose(buf);
     TokenListDispose(toks);

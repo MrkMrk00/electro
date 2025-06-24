@@ -75,6 +75,8 @@ begin
             WriteLn(StdErr, 'indetifiers not yet implemented');
             Halt(1);
         end;
+    else
+        WriteLn(StdErr, 'unexpected token "', TokenToString(E.Literal), '"');
     end;
 
     EvalLiteral := ret;
@@ -108,6 +110,7 @@ var
     t: string;
 begin
     case Expression.Kind of
+        exprGrouping: value := EvaluateExpression(Expression.Inner^);
         exprLiteral: value := EvalLiteral(Expression);
         exprUnary: value := EvalUnary(Expression);
 
@@ -142,7 +145,7 @@ begin
                 tokIdentifier: begin
                     if Expression.Operator.Literal = 'div' then
                         value.NumVal := vi1.NumVal / vi2.NumVal
-                    else if Expression.Operator.Literal = 'div' then
+                    else if Expression.Operator.Literal = 'mod' then
                         value.NumVal := Trunc(vi1.NumVal) mod Trunc(vi2.NumVal)
                     else
                     begin

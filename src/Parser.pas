@@ -272,6 +272,29 @@ begin
     Expr := nil;
 end;
 
+procedure ReverseExpressions(var Head: PExpression);
+var
+    cur, prev, next: PExpression;
+begin
+    if (Head = nil) or (Head^.Next = nil) then
+        Exit;
+
+    prev := nil;
+    next := nil;
+    cur := Head;
+
+    while cur <> nil do
+    begin
+        next := cur^.Next;
+        cur^.Next := prev;
+
+        prev := cur;
+        cur := next;
+    end;
+
+    Head := prev;
+end;
+
 function ParseTokens(UnitName: string; TokenList: PToken): PExpression;
 var
     t: TParserState;
@@ -301,6 +324,8 @@ begin
     end
     until t.TokenList = nil;
 
+    ReverseExpressions(t.Expressions);
+
     ParseTokens := t.Expressions;
 end;
 
@@ -321,44 +346,22 @@ end;
 function PrintExpressionImpl(Expression: PExpression; Depth: Integer): string;
 begin
     case Expression^.Kind of
-        exprLiteral: begin
-            PrintExpressionImpl := IndentString(
-                'Literal(' + TokenToString(Expression^.Literal) + ')',
-                Depth
-            );
+        exprGrouping: PrintExpressionImpl(Expression^.Inner, Depth);
+        exprLiteral:
+            WriteLn(IndentString('Literal(' + TokenToString(Expression^.Literal) + ')', Depth));
+        exprUnary: begin
+            WriteLn(IndentString('Unary(', Depth));
+            WriteLn(IndentString(TokenToString(Expression^.PrefixOperator), Depth + 1));
+            PrintExpressionImpl(Expression^.Expression, Depth + 1);
+            WriteLn(IndentString(')', Depth));
         end;
-        exprUnary:
-            PrintExpressionImpl := IndentString(
-                'Unary('
-                    + IndentString(TokenToString(Expression^.PrefixOperator), Depth)
-                    + NEWLINE
-                    + PrintExpressionImpl(Expression^.Expression, Depth + 1)
-                    + NEWLINE
-                    + ')',
-                Depth
-            );
-        exprBinary:
-            PrintExpressionImpl := IndentString(
-                'Binary('
-                    + NEWLINE
-                    + PrintExpressionImpl(Expression^.Left, Depth + 1)
-                    + NEWLINE
-                    + IndentString(TokenToString(Expression^.Operator), Depth + 1)
-                    + NEWLINE
-                    + PrintExpressionImpl(Expression^.Right, Depth + 1)
-                    + NEWLINE
-                    + IndentString(')', Depth),
-                Depth
-            );
-        exprGrouping:
-            PrintExpressionImpl := IndentString(
-                '('
-                    + NEWLINE
-                    + PrintExpressionImpl(Expression^.Inner, Depth + 1)
-                    + NEWLINE
-                    + ')',
-                Depth
-            );
+        exprBinary: begin
+            WriteLn(IndentString('Binary(', Depth));
+            PrintExpressionImpl(Expression^.Left, Depth + 1);
+            WriteLn(IndentString(TokenToString(Expression^.Operator), Depth + 1));
+            PrintExpressionImpl(Expression^.Right, Depth + 1);
+            WriteLn(IndentString(')', Depth));
+        end;
     end;
 end;
 
