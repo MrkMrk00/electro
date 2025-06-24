@@ -406,6 +406,8 @@ begin
                         + IntToStr(t.Line) + ':'
                         + IntToStr(t.Col) + ':'
                 );
+
+                break;
             end;
         end;
     end

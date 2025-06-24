@@ -6,7 +6,7 @@
     Multiline
     tvoje
     mama
-    { i vložená }
+    { i vložená } // opravdu to chceš?
 }
 
 2 + 3 * 7;
@@ -17,3 +17,4 @@
 62 mod (2 * 2 * 2);
 
 (3 + 1) * 4 + (50000.23 + 0.77 + 12);
+
