@@ -55,9 +55,9 @@ const
     NEWLINE = #10;
     EOF = #0;
 
-function  TokenizeUnit(UnitName: string; const Buffer: TBuffer): PToken;
+function  TokenizeUnit(UnitName: string; Source: string): PToken;
 procedure TokenListDispose(var TokenList: PToken);
-function  TokenToString(const Token: TToken): string;
+function  TokenToString(Token: TToken): string;
 
 implementation
 
@@ -65,7 +65,7 @@ type
     TTokenizerState = record
         UnitName: string;
         Idx: UInt32;
-        Buffer: TBuffer;
+        Buffer: string;
         Line, Col: UInt32;
         Tokens: PToken;
         Errors: array [0..15] of string;
@@ -85,7 +85,7 @@ begin
     Inc(T.ErrIdx);
 end;
 
-function TokenToString(const Token: TToken): string;
+function TokenToString(Token: TToken): string;
 var
     kind, line, col, ret: string;
 begin
@@ -146,7 +146,7 @@ var
 begin
     ret := '';
     for i := StartIdx to EndIdx do
-        ret := ret + char(T.Buffer.Data^[i]);
+        ret := ret + char(T.Buffer[i]);
 
     SourceSubstr := ret;
 end;
@@ -176,10 +176,12 @@ end;
 
 function Peek(const T: TTokenizerState): char;
 begin
-    if T.Idx >= T.Buffer.Size then
+    // string indices start from 1
+    // -> the last index in the string is equal to its length...
+    if T.Idx > Length(T.Buffer) then
         Exit(EOF);
 
-    Peek := char(T.Buffer.Data^[T.Idx]);
+    Peek := char(T.Buffer[T.Idx]);
 end;
 
 function PeekN(const T: TTokenizerState; N: UInt32): char;
@@ -187,10 +189,10 @@ begin
     // PeekN(T, 1) should be equivalent to Peek(T)
     N := N - 1;
 
-    if (T.Idx + N) >= T.Buffer.Size then
+    if (T.Idx + N) >= Length(T.Buffer) then
         Exit(EOF);
 
-    PeekN := char(T.Buffer.Data^[T.Idx + N]);
+    PeekN := char(T.Buffer[T.Idx + N]);
 end;
 
 function Advance(var T: TTokenizerState): char;
@@ -410,16 +412,18 @@ begin
     until curlyDepth <= 0;
 end;
 
-function TokenizeUnit(UnitName: string; const Buffer: TBuffer): PToken;
+function TokenizeUnit(UnitName: string; Source: string): PToken;
 var
     t: TTokenizerState;
     ch: char;
     i: Integer;
 begin
-    t.Idx := 0;
+    // Strings indices start from 1 :/
+    t.Idx := 1;
     t.UnitName := UnitName;
-    t.Buffer := Buffer;
+    t.Buffer := Source;
     t.Line := 0;
+    // TODO: maybe refactor to beggining of line index and then count from there?
     t.Col := 0;
     t.Tokens := nil;
     t.ErrIdx := 0;

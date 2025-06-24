@@ -13,7 +13,7 @@ type
 function  BufferNew(Size: UInt32): TBuffer;
 procedure BufferDispose(var Buffer: TBuffer);
 
-function  BinaryToString(const Buffer: TBuffer): string;
+function BinaryToString(Buffer: TBuffer): string;
 
 implementation
 
@@ -40,18 +40,19 @@ begin
     Buffer.Size := 0;
 end;
 
-function BinaryToString(const Buffer: TBuffer): string;
+function BinaryToString(Buffer: TBuffer): string;
 var
     ret: string;
     i: UInt32;
 begin
     ret := '';
 
-    for i := 0 to Buffer.Size do
+    for i := 0 to Buffer.Size-1 do
     begin
-        ret := ret + char(Buffer.Data^[i])
+        ret := ret + char(Buffer.Data^[i]);
     end;
 
     BinaryToString := ret;
 end;
+
 end.

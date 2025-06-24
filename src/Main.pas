@@ -8,10 +8,11 @@ uses
     Interpreter;
 
 var
-    unitSource: TBuffer;
+    unitSource: string;
     toks: PToken;
     fileName: string;
-    expression: PExpression;
+    expression, next: PExpression;
+    buf: TBuffer;
 
 begin
     if ParamCount() < 1 then
@@ -20,9 +21,32 @@ begin
         Halt(1);
     end;
 
+    if (ParamStr(1) = '-') and (ParamCount() >= 2) then
+    begin
+        unitSource := ParamStr(2);
+        toks := TokenizeUnit('REPL', unitSource);
+        expression := ParseTokens('REPL', toks);
+
+        while expression <> nil do
+        begin
+            PrintExpression(expression);
+            WriteLn('= ', Trunc(EvaluateExpression(expression^).NumVal));
+
+            next := expression^.Next;
+            ExpressionDispose(expression);
+
+            expression := next;
+        end;
+
+        TokenListDispose(toks);
+
+        Exit;
+    end;
+
     fileName := ParamStr(1);
 
-    unitSource := ReadEntireFile(fileName);
+    buf := ReadEntireFile(fileName);
+    unitSource := BinaryToString(buf);
     toks := TokenizeUnit(fileName, unitSource);
 
     if toks = nil then
@@ -35,11 +59,11 @@ begin
     while expression <> nil do
     begin
         PrintExpression(expression);
-        WriteLn('= ', Trunc(EvaluateExpression(expression^).FloatVal));
+        WriteLn('= ', Trunc(EvaluateExpression(expression^).NumVal));
 
         expression := expression^.Next;
     end;
 
-    BufferDispose(unitSource);
+    BufferDispose(buf);
     TokenListDispose(toks);
 end.
