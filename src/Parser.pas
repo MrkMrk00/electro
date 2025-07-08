@@ -4,28 +4,44 @@ interface
 
 uses Tokenizer;
 
-type
-    TExpressionKind = ( exprLiteral, exprUnary, exprBinary, exprGrouping );
+const MAX_VAR_DECLS = 100;
 
-    PExpression = ^TExpression;
-    TExpression = record
-        Kind: TExpressionKind;
-        Next: PExpression;
+type
+    TAstNodeKind = (
+        astStmtVarDecl,
+        astExprLiteral, astExprUnary, astExprBinary, astExprGrouping
+    );
+
+    TVariableBind = record
+        Name: string;
+        TypeName: string;
+    end;
+    TVariableBindArray = array [0..0] of TVariableBind;
+    TVarList = record
+        Variables: ^TVariableBindArray;
+        Count, Capacity: Integer;
+    end;
+
+    PAstNode = ^TAstNode;
+    TAstNode = record
+        Kind: TAstNodeKind;
+        Next: PAstNode;
 
         // This is kind of hell. If this was slightly better, I believe this language
         // would still be used today :/
         // 1) Cannot have fields with the same name in multiple cases :/
         // 2) Accessing the fields is not checked :/ -> this would put it on par with Rust and Zig.
-        case TExpressionKind of
-            exprLiteral:  (Literal: TToken);
-            exprUnary:    (PrefixOperator: TToken; Expression: PExpression);
-            exprBinary:   (Left, Right: PExpression; Operator: TToken);
-            exprGrouping: (Inner: PExpression);
+        case TAstNodeKind of
+            astExprLiteral:  (Literal: TToken);
+            astExprUnary:    (PrefixOperator: TToken; Expression: PAstNode);
+            astExprBinary:   (Left, Right: PAstNode; Operator: TToken);
+            astExprGrouping: (Inner: PAstNode);
+            astStmtVarDecl:  (VarDecls: TVarList);
     end;
 
-function  ParseTokens(UnitName: string; TokenList: PToken): PExpression;
-procedure PrintExpression(Expression: PExpression);
-procedure ExpressionDispose(var Expr: PExpression);
+function  ParseTokens(UnitName: string; TokenList: PToken): PAstNode;
+procedure PrintExpression(Expression: PAstNode);
+procedure ExpressionDispose(var Expr: PAstNode);
 
 implementation
 
@@ -33,13 +49,16 @@ implementation
     === Recursive descent parser
     https://craftinginterpreters.com/parsing-expressions.html
 
+    StmtVarDecl := "var" ( VarBind ; )*
+    VarBind     := IDENTIFIER : IDENTIFIER
+
     Expression  := Equality ;
     Equality    := Comparison ( ( "=" | "<>" ) Comparison )* ;  // This is wrong for Pascal, since equality has low precedence.
     Comparison  := Term ( ( "<" | ">" | "<=" | ">=" ) Term )* ;
     Term        := Factor ( ( "+" | "-" ) Factor )* ;
     Factor      := Unary ( ( "div" | "mod" | "*" ) Unary )* ;
     Unary       := ( "-" | "+" ) Unary
-                | Primary;
+                | Primary ;
 
     Primary     := NUMBER | STRING | CHARCODE | IDENTIFIER
                 | ( "(" Expression ")" ) ;
@@ -51,17 +70,17 @@ implementation
 type
     TParserState = record
         TokenList: PToken;
-        Expressions: PExpression;
+        Expressions: PAstNode;
     end;
 
-function EatExpression(var T: TParserState): PExpression; forward;
+function EatExpression(var T: TParserState): PAstNode; forward;
 
-function NewBinaryExpression(Left: PExpression; Operator: TToken; Right: PExpression): PExpression;
+function NewBinaryExpression(Left: PAstNode; Operator: TToken; Right: PAstNode): PAstNode;
 var
-    ret: PExpression;
+    ret: PAstNode;
 begin
     New(ret);
-    ret^.Kind := exprBinary;
+    ret^.Kind := astExprBinary;
     ret^.Left := Left;
     ret^.Operator := Operator;
     ret^.Right := Right;
@@ -94,14 +113,14 @@ var
     cur: PToken;
 begin
     cur := T.TokenList;
-    T.TokenList := cur^.Next;
+    T.TokenList := T.TokenList^.Next;
 
     Advance := cur;
 end;
 
-function EatPrimary(var T: TParserState): PExpression;
+function EatPrimary(var T: TParserState): PAstNode;
 var
-    expr: PExpression;
+    expr: PAstNode;
     literal: TToken;
 begin
     case T.TokenList^.Kind of
@@ -111,7 +130,7 @@ begin
             literal.Next := nil;
 
             New(expr);
-            expr^.Kind := exprLiteral;
+            expr^.Kind := astExprLiteral;
             expr^.Literal := literal;
 
             EatPrimary := expr;
@@ -122,7 +141,7 @@ begin
             Advance(T);
 
             New(expr);
-            expr^.Kind := exprGrouping;
+            expr^.Kind := astExprGrouping;
             expr^.Inner := EatExpression(T);
 
             // TODO: handle gracefully
@@ -151,9 +170,9 @@ begin
     end;
 end;
 
-function EatUnary(var T: TParserState): PExpression;
+function EatUnary(var T: TParserState): PAstNode;
 var
-    expr: PExpression;
+    expr: PAstNode;
     prefixOperator: TToken;
 begin
     // Is unary with sign prefix
@@ -162,7 +181,7 @@ begin
         prefixOperator := Advance(T)^;
 
         New(expr);
-        expr^.Kind := exprUnary;
+        expr^.Kind := astExprUnary;
         expr^.PrefixOperator := prefixOperator;
         expr^.Expression := EatUnary(T);
 
@@ -172,9 +191,9 @@ begin
         EatUnary := EatPrimary(T);
 end;
 
-function EatFactor(var T: TParserState): PExpression;
+function EatFactor(var T: TParserState): PAstNode;
 var
-    expr, right: PExpression;
+    expr, right: PAstNode;
     operator: TToken;
 begin
     expr := EatUnary(T);
@@ -191,9 +210,9 @@ begin
     EatFactor := expr;
 end;
 
-function EatTerm(var T: TParserState): PExpression;
+function EatTerm(var T: TParserState): PAstNode;
 var
-    expr, right: PExpression;
+    expr, right: PAstNode;
     operator: TToken;
 begin
     expr := EatFactor(T);
@@ -210,9 +229,9 @@ begin
     EatTerm := expr;
 end;
 
-function EatComparison(var T: TParserState): PExpression;
+function EatComparison(var T: TParserState): PAstNode;
 var
-    expr, right: PExpression;
+    expr, right: PAstNode;
     operator: TToken;
 begin
     expr := EatTerm(T);
@@ -230,9 +249,9 @@ begin
     EatComparison := expr;
 end;
 
-function EatEquality(var T: TParserState): PExpression;
+function EatEquality(var T: TParserState): PAstNode;
 var
-    expr, right: PExpression;
+    expr, right: PAstNode;
     operator: TToken;
 begin
     expr := EatComparison(T);
@@ -249,32 +268,92 @@ begin
     EatEquality := expr;
 end;
 
-function EatExpression(var T: TParserState): PExpression;
+function EatExpression(var T: TParserState): PAstNode;
 begin
     EatExpression := EatEquality(T);
 end;
 
-procedure ExpressionDispose(var Expr: PExpression);
+function EatVarDecl(var T: TParserState): PAstNode;
+var
+    astNode: PAstNode;
+    variables: TVarList;
+    varName, varType: string;
+begin
+    Advance(T);
+
+    variables.Count := 0;
+    variables.Capacity := 4;
+    variables.Variables := GetMem(SizeOf(TVariableBind) * variables.Capacity);
+
+    while true do
+    begin
+        if variables.Count = variables.Capacity then
+        begin
+             variables.Capacity := variables.Capacity * 2;
+             variables.Variables := ReAllocMem(variables.Variables, SizeOf(TVariableBind) * variables.Capacity);
+        end;
+
+        if not Match(T, tokIdentifier) then
+            break;
+
+        varName := Advance(T)^.Literal;
+
+        if not Match(T, tokColon) then begin WriteLn(StdErr, '0 invalid statement var decl'); Halt(1); end;
+        Advance(T);
+
+        if not Match(T, tokIdentifier) then begin WriteLn(StdErr, '1 invalid statement var decl'); Halt(1); end;
+        varType := Advance(T)^.Literal;
+
+        variables.Variables^[variables.Count].Name := varName;
+        variables.Variables^[variables.Count].TypeName := varType;
+        variables.Count := variables.Count + 1;
+
+        if not Match(T, tokSemi) then begin WriteLn(StdErr, 'tokSemi expected after statement'); Halt(1) end;
+    end;
+
+    if variables.Count = 0 then
+    begin
+        WriteLn(StdErr, 'invalid statement var decl');
+        Halt(1);
+    end;
+
+    New(astNode);
+    astNode^.Kind := astStmtVarDecl;
+    astNode^.VarDecls := variables;
+
+    EatVarDecl := astNode;
+end;
+
+function EatStatement(var T: TParserState): PAstNode;
+begin
+    if (T.TokenList^.Kind = tokIdentifier)
+        and (T.TokenList^.Literal = 'var') then
+        EatStatement := EatVarDecl(T)
+    else
+        EatStatement := EatExpression(T);
+end;
+
+procedure ExpressionDispose(var Expr: PAstNode);
 begin
     if Expr = nil then
         Exit;
 
     case Expr^.Kind of
-        exprUnary: ExpressionDispose(Expr^.Expression);
-        exprBinary: begin
+        astExprUnary: ExpressionDispose(Expr^.Expression);
+        astExprBinary: begin
             ExpressionDispose(Expr^.Left);
             ExpressionDispose(Expr^.Right);
         end;
-        exprGrouping: ExpressionDispose(Expr^.Inner);
+        astExprGrouping: ExpressionDispose(Expr^.Inner);
     end;
 
     Dispose(Expr);
     Expr := nil;
 end;
 
-procedure ReverseExpressions(var Head: PExpression);
+procedure ReverseExpressions(var Head: PAstNode);
 var
-    cur, prev, next: PExpression;
+    cur, prev, next: PAstNode;
 begin
     if (Head = nil) or (Head^.Next = nil) then
         Exit;
@@ -295,10 +374,10 @@ begin
     Head := prev;
 end;
 
-function ParseTokens(UnitName: string; TokenList: PToken): PExpression;
+function ParseTokens(UnitName: string; TokenList: PToken): PAstNode;
 var
     t: TParserState;
-    expr: PExpression;
+    expr: PAstNode;
 begin
     t.TokenList := TokenList;
     t.Expressions := nil;
@@ -318,7 +397,15 @@ begin
             continue;
         end;
 
-        expr := EatExpression(t);
+        case t.TokenList^.Kind of
+            tokIdentifier: begin
+                if t.TokenList^.Literal = 'var' then
+                    expr := EatVarDecl(t);
+            end;
+        else
+            expr := EatExpression(t);
+        end;
+
         expr^.Next := t.Expressions;
         t.Expressions := expr;
     end
@@ -343,29 +430,37 @@ begin
     IndentString := ret + Str;
 end;
 
-function PrintExpressionImpl(Expression: PExpression; Depth: Integer): string;
+function PrintExpressionImpl(Expression: PAstNode; Depth: Integer): string;
+var
+    i: Integer;
 begin
     case Expression^.Kind of
-        exprGrouping: PrintExpressionImpl(Expression^.Inner, Depth);
-        exprLiteral:
+        astExprGrouping: PrintExpressionImpl(Expression^.Inner, Depth);
+        astExprLiteral:
             WriteLn(IndentString('Literal(' + TokenToString(Expression^.Literal) + ')', Depth));
-        exprUnary: begin
+        astExprUnary: begin
             WriteLn(IndentString('Unary(', Depth));
             WriteLn(IndentString(TokenToString(Expression^.PrefixOperator), Depth + 1));
             PrintExpressionImpl(Expression^.Expression, Depth + 1);
             WriteLn(IndentString(')', Depth));
         end;
-        exprBinary: begin
+        astExprBinary: begin
             WriteLn(IndentString('Binary(', Depth));
             PrintExpressionImpl(Expression^.Left, Depth + 1);
             WriteLn(IndentString(TokenToString(Expression^.Operator), Depth + 1));
             PrintExpressionImpl(Expression^.Right, Depth + 1);
             WriteLn(IndentString(')', Depth));
         end;
+        astStmtVarDecl: begin
+            for i := 0 to Expression^.VarDecls.Count - 1 do
+            begin
+                WriteLn('(variable "', Expression^.VarDecls.Variables^[i].Name, '" of type "', Expression^.VarDecls.Variables^[i].TypeName, '")');
+            end;
+        end;
     end;
 end;
 
-procedure PrintExpression(Expression: PExpression);
+procedure PrintExpression(Expression: PAstNode);
 begin
     WriteLn(PrintExpressionImpl(Expression, 0));
 end;

@@ -9,6 +9,10 @@
     { i vložená } // opravdu to chceš?
 }
 
+var
+    a: B;
+    c: D;
+
 2 + 3 * 7;
 (2 + 3) * 7;
 

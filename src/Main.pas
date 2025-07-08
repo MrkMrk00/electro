@@ -11,7 +11,7 @@ var
     unitSource: string;
     toks: PToken;
     fileName: string;
-    expression, next: PExpression;
+    expression, next: PAstNode;
     buf: TBuffer;
 
 begin

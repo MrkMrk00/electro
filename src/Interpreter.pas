@@ -30,7 +30,7 @@ type
             tyInvalid: (ErrorMessage: string);
     end;
 
-function EvaluateExpression(Expression: TExpression): TValue;
+function EvaluateExpression(Expression: TAstNode): TValue;
 
 implementation
 
@@ -49,11 +49,11 @@ begin
     ParseFloat := ret;
 end;
 
-function EvalLiteral(E: TExpression): TValue;
+function EvalLiteral(E: TAstNode): TValue;
 var
     ret: TValue;
 begin
-    Assert(E.Kind = exprLiteral);
+    Assert(E.Kind = astExprLiteral);
 
     case E.Literal.Kind of
         tokString: begin
@@ -82,12 +82,12 @@ begin
     EvalLiteral := ret;
 end;
 
-function EvalUnary(E: TExpression): TValue;
+function EvalUnary(E: TAstNode): TValue;
 var
     right: TValue;
     t: string;
 begin
-    Assert(E.Kind = exprUnary);
+    Assert(E.Kind = astExprUnary);
 
     right := EvaluateExpression(E.Expression^);
     
@@ -104,17 +104,17 @@ begin
     EvalUnary := right;
 end;
 
-function EvaluateExpression(Expression: TExpression): TValue;
+function EvaluateExpression(Expression: TAstNode): TValue;
 var
     value, vi1, vi2: TValue;
     t: string;
 begin
     case Expression.Kind of
-        exprGrouping: value := EvaluateExpression(Expression.Inner^);
-        exprLiteral: value := EvalLiteral(Expression);
-        exprUnary: value := EvalUnary(Expression);
+        astExprGrouping: value := EvaluateExpression(Expression.Inner^);
+        astExprLiteral: value := EvalLiteral(Expression);
+        astExprUnary: value := EvalUnary(Expression);
 
-        exprBinary: begin
+        astExprBinary: begin
             vi1 := EvaluateExpression(Expression.Left^);
             if vi1.Kind = tyInvalid then
                 Exit(vi1);

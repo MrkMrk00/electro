@@ -30,7 +30,7 @@ type
         tokLte,         // <=
         tokGte,         // >=
 
-        tokIdentifier,
+        tokIdentifier,  // refactor to tokName?
         tokString,
         tokNumber,
         tokCharcode,    // e.g. #10 -> NEWLINE literal
