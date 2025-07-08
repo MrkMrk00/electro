@@ -2,9 +2,64 @@ unit Parser;
 
 interface
 
-uses Tokenizer;
+uses Prelude, Tokenizer, Containers;
 
-const MAX_VAR_DECLS = 100;
+const
+    MAX_VAR_DECLS = 100;
+
+    KW_PROGRAM = 'program';
+    KW_INTERFACE = 'interface';
+    KW_IMPLEMENTATION = 'implementation';
+
+    KW_TYPE = 'type';
+    KW_RECORD = 'record';
+    KW_ARRAY = 'array';
+
+    KW_BEGIN = 'begin';
+    KW_END = 'end';
+    KW_CASE = 'case';
+    KW_OF = 'of';
+    KW_FOR = 'for';
+    KW_TO = 'to';
+    KW_DO = 'do';
+    KW_WHILE = 'while';
+    KW_REPEAT = 'repeat';
+    KW_UNTIL = 'until';
+    KW_IF = 'if';
+    KW_ELSE = 'else';
+    KW_THEN = 'then';
+    KW_GOTO = 'goto';
+    KW_LABEL = 'label';
+    KW_CONTINUE = 'continue';
+    KW_BREAK = 'break';
+    KW_EXIT = 'exit';
+
+    KW_VAR = 'var';
+    KW_CONST = 'const';
+    KW_PROCEDURE = 'procedure';
+    KW_FUNCTION = 'function';
+
+    KW_AND = 'and';
+    KW_OR = 'or';
+    KW_NOT = 'not';
+    KW_XOR = 'xor';
+    KW_DIV = 'div';
+    KW_MOD = 'mod';
+
+    KEYWORDS: array of string = (
+        KW_PROGRAM, KW_INTERFACE, KW_IMPLEMENTATION,
+        KW_TYPE, KW_RECORD, KW_ARRAY,
+        KW_BEGIN, KW_END, KW_CASE,
+        KW_OF, KW_FOR, KW_TO,
+        KW_DO, KW_WHILE, KW_REPEAT,
+        KW_UNTIL, KW_IF, KW_ELSE,
+        KW_THEN, KW_GOTO, KW_LABEL,
+        KW_CONTINUE, KW_BREAK, KW_EXIT,
+        KW_VAR, KW_CONST, KW_PROCEDURE,
+        KW_FUNCTION,
+        KW_AND, KW_OR, KW_NOT,
+        KW_XOR, KW_DIV, KW_MOD
+    );
 
 type
     TAstNodeKind = (
@@ -69,31 +124,76 @@ implementation
 
 type
     TParserState = record
+        UnitName: string;
         TokenList: PToken;
         Expressions: PAstNode;
+        Errors: TStringArray;
     end;
+
+function ParserStateCreate(unitName: string; tokens: PToken): TParserState;
+var
+    parserState: TParserState;
+begin
+    parserState.UnitName := unitName;
+    parserState.TokenList := tokens;
+    parserState.Expressions := nil;
+
+    StringArrayInit(parserState.Errors);
+
+    ParserStateCreate := parserState;
+end;
 
 function EatExpression(var T: TParserState): PAstNode; forward;
 
-function NewBinaryExpression(Left: PAstNode; Operator: TToken; Right: PAstNode): PAstNode;
-var
-    ret: PAstNode;
+function IsAtEnd(var T: TParserState): Boolean;
 begin
-    New(ret);
-    ret^.Kind := astExprBinary;
-    ret^.Left := Left;
-    ret^.Operator := Operator;
-    ret^.Right := Right;
-
-    NewBinaryExpression := ret;
+    IsAtEnd := T.TokenList = nil;
 end;
 
-function Match(var T: TParserState; Kind: TTokenKind): Boolean;
+function Peek(var t: TParserState): TToken;
+var
+    tok: TToken;
+begin
+    if IsAtEnd(t) then
+        tok.Kind := tokInvalid
+    else
+        tok := t.TokenList^;
+
+    Peek := tok;
+end;
+
+function Advance(var T: TParserState): PToken;
+var
+    cur: PToken;
+begin
+    cur := T.TokenList;
+    T.TokenList := T.TokenList^.Next;
+
+    Advance := cur;
+end;
+
+function IsKeyword(str: string): Boolean;
+var
+    i: Integer;
+begin
+    for i := 0 to Length(KEYWORDS) - 1 do
+    begin
+        if str = KEYWORDS[i] then
+            Exit(true);
+    end;
+
+    IsKeyword := false;
+end;
+
+function Match(var t: TParserState; kind: TTokenKind): Boolean;
 begin
     if t.TokenList = nil then
         Exit(false);
 
-    Match := t.TokenList^.Kind = Kind;
+    if (kind = tokIdentifier) and IsKeyword(t.TokenList^.Literal) then
+        Exit(false);
+
+    Match := t.TokenList^.Kind = kind;
 end;
 
 function MatchKW(var T: TParserState; Keyword: string): Boolean;
@@ -108,14 +208,53 @@ begin
     MatchKW := token^.Literal = Keyword;
 end;
 
-function Advance(var T: TParserState): PToken;
-var
-    cur: PToken;
-begin
-    cur := T.TokenList;
-    T.TokenList := T.TokenList^.Next;
 
-    Advance := cur;
+function Consume(var t: TParserState; kind: TTokenKind; errorMessage: String): PToken;
+var
+    cur: TToken;
+begin
+    Consume := nil;
+
+    if Match(t, kind) then
+    begin
+        Exit(Advance(t));
+    end;
+
+    cur := Peek(t);
+    StringArrayPush(t.Errors, t.UnitName + '(' + IntToStr(cur.Line) + ',' + IntToStr(cur.Col) + '): ' + errorMessage);
+
+    // Synchronize the parser state
+    while not IsAtEnd(t) do
+    begin
+        if Match(t, tokSemi) then
+            break;
+
+        if MatchKW(t, KW_VAR)
+            or MatchKW(t, KW_CONST)
+            or MatchKW(t, KW_TYPE)
+            or MatchKW(t, KW_FUNCTION)
+            or MatchKW(t, KW_PROCEDURE)
+            or MatchKW(t, KW_IF)
+            or MatchKW(t, KW_WHILE)
+            or MatchKW(t, KW_FOR)
+            or MatchKW(t, KW_IMPLEMENTATION)
+            or MatchKW(t, KW_INTERFACE) then break;
+
+        Advance(t);
+    end;
+end;
+
+function NewBinaryExpression(Left: PAstNode; Operator: TToken; Right: PAstNode): PAstNode;
+var
+    ret: PAstNode;
+begin
+    New(ret);
+    ret^.Kind := astExprBinary;
+    ret^.Left := Left;
+    ret^.Operator := Operator;
+    ret^.Right := Right;
+
+    NewBinaryExpression := ret;
 end;
 
 function EatPrimary(var T: TParserState): PAstNode;
@@ -124,8 +263,8 @@ var
     literal: TToken;
 begin
     case T.TokenList^.Kind of
-        tokIdentifier, tokString, tokNumber,
-        tokCharcode: begin
+        tokIdentifier, tokString, tokInteger,
+        tokFloat, tokCharcode: begin
             literal := Advance(T)^;
             literal.Next := nil;
 
@@ -278,6 +417,7 @@ var
     astNode: PAstNode;
     variables: TVarList;
     varName, varType: string;
+    tok: PToken;
 begin
     Advance(T);
 
@@ -285,30 +425,32 @@ begin
     variables.Capacity := 4;
     variables.Variables := GetMem(SizeOf(TVariableBind) * variables.Capacity);
 
-    while true do
+    while Match(t, tokIdentifier) do
     begin
         if variables.Count = variables.Capacity then
         begin
              variables.Capacity := variables.Capacity * 2;
-             variables.Variables := ReAllocMem(variables.Variables, SizeOf(TVariableBind) * variables.Capacity);
+             variables.Variables := ReallocMem(variables.Variables, SizeOf(TVariableBind) * variables.Capacity);
         end;
 
-        if not Match(T, tokIdentifier) then
-            break;
+        tok := Consume(T, tokIdentifier, 'expected identifier as variable name');
+        if tok = nil then
+            Exit;
 
-        varName := Advance(T)^.Literal;
+        varName := tok^.Literal;
 
-        if not Match(T, tokColon) then begin WriteLn(StdErr, '0 invalid statement var decl'); Halt(1); end;
-        Advance(T);
+        Consume(t, tokColon, 'expected colon as variable name and type separator');
+        tok := Consume(t, tokIdentifier, 'expected type name');
+        if tok = nil then
+            Exit;
 
-        if not Match(T, tokIdentifier) then begin WriteLn(StdErr, '1 invalid statement var decl'); Halt(1); end;
-        varType := Advance(T)^.Literal;
+        varType := tok^.Literal;
 
         variables.Variables^[variables.Count].Name := varName;
         variables.Variables^[variables.Count].TypeName := varType;
         variables.Count := variables.Count + 1;
 
-        if not Match(T, tokSemi) then begin WriteLn(StdErr, 'tokSemi expected after statement'); Halt(1) end;
+        Consume(t, tokSemi, 'expected semicolon after statement');
     end;
 
     if variables.Count = 0 then
@@ -326,8 +468,7 @@ end;
 
 function EatStatement(var T: TParserState): PAstNode;
 begin
-    if (T.TokenList^.Kind = tokIdentifier)
-        and (T.TokenList^.Literal = 'var') then
+    if MatchKW(t, KW_VAR) then
         EatStatement := EatVarDecl(T)
     else
         EatStatement := EatExpression(T);
@@ -374,13 +515,12 @@ begin
     Head := prev;
 end;
 
-function ParseTokens(UnitName: string; TokenList: PToken): PAstNode;
+function ParseTokens(unitName: string; tokenList: PToken): PAstNode;
 var
     t: TParserState;
     expr: PAstNode;
 begin
-    t.TokenList := TokenList;
-    t.Expressions := nil;
+    t := ParserStateCreate(unitName, tokenList);
 
     if t.TokenList = nil then
     begin
@@ -397,14 +537,7 @@ begin
             continue;
         end;
 
-        case t.TokenList^.Kind of
-            tokIdentifier: begin
-                if t.TokenList^.Literal = 'var' then
-                    expr := EatVarDecl(t);
-            end;
-        else
-            expr := EatExpression(t);
-        end;
+        expr := EatStatement(t);
 
         expr^.Next := t.Expressions;
         t.Expressions := expr;
