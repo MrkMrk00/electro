@@ -2,7 +2,7 @@ unit Tokenizer;
 
 interface
 
-uses BufferUtils;
+uses Prelude, BufferUtils;
 
 type
     TTokenKind = (
@@ -30,9 +30,12 @@ type
         tokLte,         // <=
         tokGte,         // >=
 
-        tokIdentifier,  // refactor to tokName?
+        tokIdentifier,
+
+        // Literals
         tokString,
-        tokNumber,
+        tokInteger,
+        tokFloat,
         tokCharcode,    // e.g. #10 -> NEWLINE literal
 
         tokInvalid
@@ -46,8 +49,8 @@ type
         Next: PToken;
 
         case TTokenKind of
-            tokIdentifier, tokString, tokNumber,
-            tokCharcode, tokInvalid: (Literal: string);
+            tokIdentifier, tokString, tokInteger,
+            tokFloat, tokCharcode, tokInvalid: (Literal: string);
     end;
 
 const
@@ -97,8 +100,8 @@ begin
     ret := '';
 
     case Token.Kind of
-        tokNumber, tokIdentifier, tokString,
-        tokCharcode, tokInvalid:
+        tokInteger, tokFloat, tokIdentifier, 
+        tokString, tokCharcode, tokInvalid:
             ret := ret + kind + '(' + Token.Literal + ')';
     else
         ret := ret + kind;
@@ -245,6 +248,8 @@ var
     lookahead: char;
     literal: string;
     token: ^TToken;
+    isFloat: Boolean;
+    dotCount, i: Integer;
 begin
     startPos := T.Idx - 1;
     lookahead := Peek(T);
@@ -258,10 +263,31 @@ begin
     endPos := T.Idx - 1;
     literal := SourceSubstr(T, startPos, endPos);
 
+    // Validate literal
+    dotCount := 0;
+    for i := 1 to Length(literal) do
+    begin
+        if literal[i] = '.' then
+            dotCount := dotCount + 1;
+    end;
+
+    if dotCount > 1 then
+    begin
+        AppendError(T, 'invalid number token encountered "' + literal + '"');
+        AppendInvalid(T, literal);
+
+        Exit;
+    end;
+    isFloat := dotCount > 1;
+
     New(token);
     token^.Line := T.Line;
     token^.Col := T.Col - Length(literal);
-    token^.Kind := tokNumber;
+    if isFloat then
+        token^.Kind := tokFloat
+    else
+        token^.Kind := tokInteger;
+
     token^.Literal := literal;
 
     AppendToken(T, token);
@@ -306,14 +332,6 @@ begin
     AppendToken(T, token);
 end;
 
-function IntToStr(I: Integer): string;
-var
-    ret: string;
-begin
-    Str(I, ret);
-
-    IntToStr := ret;
-end;
 
 procedure EatString(var T: TTokenizerState);
 var

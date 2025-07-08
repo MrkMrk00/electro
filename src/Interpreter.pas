@@ -61,7 +61,7 @@ begin
             ret.StrVal := E.Literal.Literal;
         end;
 
-        tokNumber: begin
+        tokInteger, tokFloat: begin
             ret.Kind   := tyNumber;
             ret.NumVal := ParseFloat(E.Literal.Literal);
         end;
