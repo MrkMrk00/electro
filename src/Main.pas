@@ -33,7 +33,6 @@ begin
             WriteLn('= ', Trunc(EvaluateExpression(expression^).NumVal));
 
             next := expression^.Next;
-            ExpressionDispose(expression);
 
             expression := next;
         end;
@@ -56,6 +55,7 @@ begin
     end;
 
     expression := ParseTokens(fileName, toks);
+
     while expression <> nil do
     begin
         WriteLn('================================================');
@@ -65,7 +65,6 @@ begin
         WriteLn;
 
         next := expression^.Next;
-        ExpressionDispose(expression);
 
         expression := next;
     end;

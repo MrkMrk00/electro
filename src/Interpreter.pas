@@ -72,11 +72,9 @@ begin
         end;
 
         tokIdentifier: begin
-            WriteLn(StdErr, 'indetifiers not yet implemented');
-            Halt(1);
+            ret.Kind := tyInvalid;
+            ret.ErrorMessage := 'identifiers not yet implemented';
         end;
-    else
-        WriteLn(StdErr, 'unexpected token "', TokenToString(E.Literal), '"');
     end;
 
     EvalLiteral := ret;
@@ -90,7 +88,7 @@ begin
     Assert(E.Kind = astExprUnary);
 
     right := EvaluateExpression(E.Expression^);
-    
+
     if right.Kind <> tyNumber then
     begin
         Str(E.Kind, t);

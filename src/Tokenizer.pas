@@ -441,7 +441,7 @@ begin
     // Strings indices start from 1 :/
     t.Idx := 1;
     t.UnitName := UnitName;
-    t.Buffer := Source;
+    t.Buffer := Source + EOF;
     t.Line := 0;
     // TODO: maybe refactor to beggining of line index and then count from there?
     t.Col := 0;
@@ -513,7 +513,7 @@ begin
                 AppendError(t, 'invalid token encountered "' + ch + '"');
             end;
         end;
-    until (ch = EOF) or (t.ErrIdx >= High(t.Errors));
+    until (t.Idx >= Length(t.Buffer)) or (ch = EOF) or (t.ErrIdx >= High(t.Errors));
 
     if t.ErrIdx > 0 then
     begin

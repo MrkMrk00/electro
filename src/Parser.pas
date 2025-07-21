@@ -63,7 +63,11 @@ const
 
 type
     TAstNodeKind = (
-        astStmtVarDecl,
+        // Non-statement expressions
+        astStmtEmpty,           // Empty statement = just ;
+        astStmtVarDecl,         // var A: TypeA; B: TypeB; ...
+
+        // Expressions
         astExprLiteral, astExprUnary, astExprBinary, astExprGrouping
     );
 
@@ -71,6 +75,7 @@ type
         Name: string;
         TypeName: string;
     end;
+
     TVariableBindArray = array [0..0] of TVariableBind;
     TVarList = record
         Variables: ^TVariableBindArray;
@@ -82,11 +87,8 @@ type
         Kind: TAstNodeKind;
         Next: PAstNode;
 
-        // This is kind of hell. If this was slightly better, I believe this language
-        // would still be used today :/
-        // 1) Cannot have fields with the same name in multiple cases :/
-        // 2) Accessing the fields is not checked :/ -> this would put it on par with Rust and Zig.
         case TAstNodeKind of
+            astStmtEmpty:    ();
             astExprLiteral:  (Literal: TToken);
             astExprUnary:    (PrefixOperator: TToken; Expression: PAstNode);
             astExprBinary:   (Left, Right: PAstNode; Operator: TToken);
@@ -96,7 +98,7 @@ type
 
 function  ParseTokens(UnitName: string; TokenList: PToken): PAstNode;
 procedure PrintExpression(Expression: PAstNode);
-procedure ExpressionDispose(var Expr: PAstNode);
+procedure AstDispose(var ast: PAstNode);
 
 implementation
 
@@ -126,7 +128,7 @@ type
     TParserState = record
         UnitName: string;
         TokenList: PToken;
-        Expressions: PAstNode;
+        Ast: PAstNode;
         Errors: TStringArray;
     end;
 
@@ -136,7 +138,7 @@ var
 begin
     parserState.UnitName := unitName;
     parserState.TokenList := tokens;
-    parserState.Expressions := nil;
+    parserState.Ast := nil;
 
     StringArrayInit(parserState.Errors);
 
@@ -260,43 +262,36 @@ end;
 function EatPrimary(var T: TParserState): PAstNode;
 var
     expr: PAstNode;
-    literal: TToken;
+    literal: PToken;
+    litCopy: TToken;
 begin
     case T.TokenList^.Kind of
         tokIdentifier, tokString, tokInteger,
         tokFloat, tokCharcode: begin
-            literal := Advance(T)^;
-            literal.Next := nil;
+            literal := Advance(T);
+            if literal = nil then
+                Exit(nil);
+
+            litCopy := literal^;
+            litCopy.Next := nil;
 
             New(expr);
             expr^.Kind := astExprLiteral;
-            expr^.Literal := literal;
+            expr^.Literal := litCopy;
 
             EatPrimary := expr;
         end;
 
         tokLParen: begin
-            // eat "("
-            Advance(T);
+            if Consume(t, tokLParen, '"(" expected') = nil then
+                Exit(nil);
 
             New(expr);
             expr^.Kind := astExprGrouping;
             expr^.Inner := EatExpression(T);
 
-            // TODO: handle gracefully
-            if not Match(T, tokRParen) then
-            begin
-                WriteLn(StdErr,
-                    'unexpected token "',
-                    TokenToString(T.TokenList^),
-                    ' expected "tokRParen".'
-                );
-
-                Halt(1);
-            end;
-
-            // eat ")"
-            Advance(T);
+            if Consume(t, tokRParen, '")" expected') = nil then
+                Exit(nil);
 
             EatPrimary := expr;
         end;
@@ -311,18 +306,24 @@ end;
 
 function EatUnary(var T: TParserState): PAstNode;
 var
-    expr: PAstNode;
-    prefixOperator: TToken;
+    expr, sub: PAstNode;
+    prefixOperator: PToken;
 begin
     // Is unary with sign prefix
     if Match(T, tokMinus) or Match(T, tokPlus) then
     begin
-        prefixOperator := Advance(T)^;
+        prefixOperator := Advance(T);
+        if prefixOperator = nil then
+            Exit(nil);
+
+        sub := EatUnary(T);
+        if sub = nil then
+            Exit(nil);
 
         New(expr);
         expr^.Kind := astExprUnary;
-        expr^.PrefixOperator := prefixOperator;
-        expr^.Expression := EatUnary(T);
+        expr^.PrefixOperator := prefixOperator^;
+        expr^.Expression := sub;
 
         EatUnary := expr;
     end
@@ -333,17 +334,27 @@ end;
 function EatFactor(var T: TParserState): PAstNode;
 var
     expr, right: PAstNode;
-    operator: TToken;
+    operator: PToken;
+    operatorCopy: TToken;
 begin
     expr := EatUnary(T);
+    if expr = nil then
+        Exit(nil);
 
     while Match(T, tokStar) or MatchKW(T, 'mod') or MatchKW(T, 'div') do
     begin
-        operator := Advance(T)^;
-        operator.Next := nil;
-        right := EatUnary(T);
+        operator := Advance(T);
+        if operator = nil then
+            Exit(nil);
 
-        expr := NewBinaryExpression(expr, operator, right);
+        operatorCopy := operator^;
+        operatorCopy.Next := nil;
+
+        right := EatUnary(T);
+        if right = nil then
+            Exit(nil);
+
+        expr := NewBinaryExpression(expr, operatorCopy, right);
     end;
 
     EatFactor := expr;
@@ -352,17 +363,27 @@ end;
 function EatTerm(var T: TParserState): PAstNode;
 var
     expr, right: PAstNode;
-    operator: TToken;
+    operator: PToken;
+    operatorCopy: TToken;
 begin
     expr := EatFactor(T);
+    if expr = nil then
+        Exit(nil);
 
     while Match(T, tokMinus) or Match(T, tokPlus) do
     begin
-        operator := Advance(T)^;
-        operator.Next := nil;
-        right := EatFactor(T);
+        operator := Advance(T);
+        if operator = nil then
+            Exit(nil);
 
-        expr := NewBinaryExpression(expr, operator, right);
+        operatorCopy := operator^;
+        operatorCopy.Next := nil;
+
+        right := EatFactor(T);
+        if right = nil then
+            Exit(nil);
+
+        expr := NewBinaryExpression(expr, operatorCopy, right);
     end;
 
     EatTerm := expr;
@@ -371,18 +392,28 @@ end;
 function EatComparison(var T: TParserState): PAstNode;
 var
     expr, right: PAstNode;
-    operator: TToken;
+    operator: PToken;
+    operatorCopy: TToken;
 begin
     expr := EatTerm(T);
+    if expr = nil then
+        Exit(nil);
 
     while Match(T, tokLt) or Match(T, tokLte) or
         Match(T, tokGt) or Match(T, tokGte) do
     begin
-        operator := Advance(T)^;
-        operator.Next := nil;
-        right := EatTerm(T);
+        operator := Advance(T);
+        if operator = nil then
+            Exit(nil);
 
-        expr := NewBinaryExpression(expr, operator, right);
+        operatorCopy := operator^;
+        operatorCopy.Next := nil;
+
+        right := EatTerm(T);
+        if right = nil then
+            Exit(nil);
+
+        expr := NewBinaryExpression(expr, operatorCopy, right);
     end;
 
     EatComparison := expr;
@@ -391,25 +422,41 @@ end;
 function EatEquality(var T: TParserState): PAstNode;
 var
     expr, right: PAstNode;
-    operator: TToken;
+    operator: PToken;
+    operatorCopy: TToken;
 begin
     expr := EatComparison(T);
+    if expr = nil then
+        Exit(nil);
 
     while Match(T, tokEq) or Match(T, tokNeq) do
     begin
-        operator := Advance(T)^;
-        operator.Next := nil;
-        right := EatComparison(T);
+        operator := Advance(T);
+        if operator = nil then
+            Exit(nil);
 
-        expr := NewBinaryExpression(expr, operator, right);
+        operatorCopy := operator^;
+        operatorCopy.Next := nil;
+
+        right := EatComparison(T);
+        if right = nil then
+            Exit(nil);
+
+        expr := NewBinaryExpression(expr, operatorCopy, right);
     end;
 
     EatEquality := expr;
 end;
 
-function EatExpression(var T: TParserState): PAstNode;
+function EatExpression(var t: TParserState): PAstNode;
+var
+    expr: PAstNode;
 begin
-    EatExpression := EatEquality(T);
+    expr := EatEquality(t);
+    if expr = nil then
+        Exit(nil);
+
+    EatExpression := expr;
 end;
 
 function EatVarDecl(var T: TParserState): PAstNode;
@@ -466,33 +513,59 @@ begin
     EatVarDecl := astNode;
 end;
 
-function EatStatement(var T: TParserState): PAstNode;
+function EatStatement(var t: TParserState): PAstNode;
+var
+    astNode: PAstNode;
 begin
-    if MatchKW(t, KW_VAR) then
-        EatStatement := EatVarDecl(T)
-    else
-        EatStatement := EatExpression(T);
-end;
+    // Empty statement
+    if Match(t, tokSemi) then
+    begin
+        Advance(t);
 
-procedure ExpressionDispose(var Expr: PAstNode);
-begin
-    if Expr = nil then
-        Exit;
+        New(astNode);
+        astNode^.Kind := astStmtEmpty;
 
-    case Expr^.Kind of
-        astExprUnary: ExpressionDispose(Expr^.Expression);
-        astExprBinary: begin
-            ExpressionDispose(Expr^.Left);
-            ExpressionDispose(Expr^.Right);
-        end;
-        astExprGrouping: ExpressionDispose(Expr^.Inner);
+        Exit(astNode);
     end;
 
-    Dispose(Expr);
-    Expr := nil;
+    if MatchKW(t, KW_VAR) then
+        EatStatement := EatVarDecl(t)
+    else
+    begin
+        EatStatement := EatExpression(t);
+        Consume(t, tokSemi, 'expected semicolon after statement');
+    end;
 end;
 
-procedure ReverseExpressions(var Head: PAstNode);
+procedure AstDispose(var ast: PAstNode);
+begin
+    if ast = nil then
+        Exit;
+
+    case ast^.Kind of
+        astStmtVarDecl: begin
+            Dispose(ast^.VarDecls.Variables);
+            ast^.VarDecls.Count := 0;
+            ast^.VarDecls.Capacity := 0;
+        end;
+
+        astExprUnary: AstDispose(ast^.Expression);
+        astExprBinary: begin
+            AstDispose(ast^.Left);
+            AstDispose(ast^.Right);
+        end;
+        astExprGrouping: AstDispose(ast^.Inner);
+    end;
+
+    if ast^.Next <> nil then
+        AstDispose(ast^.Next);
+
+    Dispose(ast);
+
+    ast := nil;
+end;
+
+procedure ReverseAstList(var Head: PAstNode);
 var
     cur, prev, next: PAstNode;
 begin
@@ -517,8 +590,9 @@ end;
 
 function ParseTokens(unitName: string; tokenList: PToken): PAstNode;
 var
-    t: TParserState;
     expr: PAstNode;
+    t: TParserState;
+    i: Integer;
 begin
     t := ParserStateCreate(unitName, tokenList);
 
@@ -531,22 +605,27 @@ begin
 
     repeat
     begin
-        if t.TokenList^.Kind = tokSemi then
-        begin
-            t.TokenList := t.TokenList^.Next;
-            continue;
-        end;
-
         expr := EatStatement(t);
+        if expr = nil then
+            continue;
 
-        expr^.Next := t.Expressions;
-        t.Expressions := expr;
+        expr^.Next := t.Ast;
+        t.Ast := expr;
     end
     until t.TokenList = nil;
 
-    ReverseExpressions(t.Expressions);
+    if t.Errors.Count > 0 then
+    begin
+        for i := 0 to t.Errors.Count - 1 do
+            WriteLn(StdErr, t.Errors.Items^[i]);
 
-    ParseTokens := t.Expressions;
+        AstDispose(t.Ast);
+        Exit(nil);
+    end;
+
+    ReverseAstList(t.Ast);
+
+    ParseTokens := t.Ast;
 end;
 
 function IndentString(Str: string; Depth: Integer): string;
