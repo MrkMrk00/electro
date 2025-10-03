@@ -210,10 +210,34 @@ begin
     MatchKW := token^.Literal = Keyword;
 end;
 
-
-function Consume(var t: TParserState; kind: TTokenKind; errorMessage: String): PToken;
+procedure PushError(var t: TParserState; errorMessage: String);
 var
     cur: TToken;
+    line, col: Integer;
+begin
+    cur := Peek(t);
+    if cur.Kind = tokInvalid then
+    begin
+        line := 0;
+        col := 0;
+    end
+    else
+    begin
+        line := cur.Line;
+        col := cur.Col;
+    end;
+
+    StringArrayPush(
+        t.Errors,
+            t.UnitName
+            + '(' + IntToStr(line)
+            + ',' + IntToStr(col) + '): '
+            + errorMessage
+    );
+end;
+
+
+function Consume(var t: TParserState; kind: TTokenKind; errorMessage: String): PToken;
 begin
     Consume := nil;
 
@@ -222,8 +246,7 @@ begin
         Exit(Advance(t));
     end;
 
-    cur := Peek(t);
-    StringArrayPush(t.Errors, t.UnitName + '(' + IntToStr(cur.Line) + ',' + IntToStr(cur.Col) + '): ' + errorMessage);
+    PushError(t, errorMessage);
 
     // Synchronize the parser state
     while not IsAtEnd(t) do
@@ -265,6 +288,9 @@ var
     literal: PToken;
     litCopy: TToken;
 begin
+    if T.TokenList = nil then
+        Exit(nil);
+
     case T.TokenList^.Kind of
         tokIdentifier, tokString, tokInteger,
         tokFloat, tokCharcode: begin
@@ -308,17 +334,20 @@ function EatUnary(var T: TParserState): PAstNode;
 var
     expr, sub: PAstNode;
     prefixOperator: PToken;
+    tokenKindAsStr: string;
 begin
     // Is unary with sign prefix
     if Match(T, tokMinus) or Match(T, tokPlus) then
     begin
         prefixOperator := Advance(T);
-        if prefixOperator = nil then
-            Exit(nil);
 
         sub := EatUnary(T);
         if sub = nil then
+        begin
+            Str(prefixOperator^.Kind, tokenKindAsStr);
+            PushError(t, 'invalid statement - expected an unary expression after "' + tokenKindAsStr + '"');
             Exit(nil);
+        end;
 
         New(expr);
         expr^.Kind := astExprUnary;
@@ -642,7 +671,7 @@ begin
     IndentString := ret + Str;
 end;
 
-function PrintExpressionImpl(Expression: PAstNode; Depth: Integer): string;
+procedure PrintExpressionImpl(Expression: PAstNode; Depth: Integer);
 var
     i: Integer;
 begin
@@ -674,7 +703,7 @@ end;
 
 procedure PrintExpression(Expression: PAstNode);
 begin
-    WriteLn(PrintExpressionImpl(Expression, 0));
+    PrintExpressionImpl(Expression, 0);
 end;
 
 end.
