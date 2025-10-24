@@ -21,27 +21,6 @@ begin
         Halt(1);
     end;
 
-    if (ParamStr(1) = '-') and (ParamCount() >= 2) then
-    begin
-        unitSource := ParamStr(2);
-        toks := TokenizeUnit('REPL', unitSource);
-        expression := ParseTokens('REPL', toks);
-
-        while expression <> nil do
-        begin
-            PrintExpression(expression);
-            WriteLn('= ', Trunc(EvaluateExpression(expression^).NumVal));
-
-            next := expression^.Next;
-
-            expression := next;
-        end;
-
-        TokenListDispose(toks);
-
-        Exit;
-    end;
-
     fileName := ParamStr(1);
 
     buf := ReadEntireFile(fileName);
